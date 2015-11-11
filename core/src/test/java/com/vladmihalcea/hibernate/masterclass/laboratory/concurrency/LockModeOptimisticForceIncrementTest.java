@@ -118,7 +118,7 @@ public class LockModeOptimisticForceIncrementTest extends AbstractTest {
     }
 
     /**
-     * OrderLine - Order Line
+     * Commit - Commit
      *
      * @author Vlad Mihalcea
      */
