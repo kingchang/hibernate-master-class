@@ -1,34 +1,67 @@
 package com.vladmihalcea.hibernate.masterclass.laboratory.util;
 
-import com.microsoft.sqlserver.jdbc.SQLServerDataSource;
-import com.mysql.jdbc.jdbc2.optional.MysqlDataSource;
-import net.sourceforge.jtds.jdbcx.JtdsDataSource;
-import net.ttddyy.dsproxy.listener.SLF4JQueryLoggingListener;
-import net.ttddyy.dsproxy.support.ProxyDataSource;
-import oracle.jdbc.pool.OracleDataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.SortedMap;
+import java.util.TreeMap;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.EntityTransaction;
+import javax.persistence.spi.PersistenceUnitInfo;
+import javax.sql.DataSource;
+
 import org.hibernate.Interceptor;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.cfg.Configuration;
-import org.hsqldb.jdbc.JDBCDataSource;
+import org.hibernate.jpa.boot.internal.EntityManagerFactoryBuilderImpl;
+import org.hibernate.jpa.boot.internal.PersistenceUnitInfoDescriptor;
+import org.hibernate.stat.SecondLevelCacheStatistics;
+
 import org.junit.After;
 import org.junit.Before;
-import org.postgresql.ds.PGSimpleDataSource;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
+import com.microsoft.sqlserver.jdbc.SQLServerDataSource;
+import com.mysql.jdbc.jdbc2.optional.MysqlDataSource;
+import net.sourceforge.jtds.jdbcx.JtdsDataSource;
+import net.ttddyy.dsproxy.ExecutionInfo;
+import net.ttddyy.dsproxy.QueryInfo;
+import net.ttddyy.dsproxy.listener.ChainListener;
+import net.ttddyy.dsproxy.listener.DefaultQueryLogEntryCreator;
+import net.ttddyy.dsproxy.listener.SLF4JQueryLoggingListener;
+import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
+import oracle.jdbc.pool.OracleDataSource;
+import org.hsqldb.jdbc.JDBCDataSource;
+import org.postgresql.ds.PGSimpleDataSource;
 
 public abstract class AbstractTest {
-
-    protected interface DataSourceProvider {
+	
+	protected interface DataSourceProvider {
 
         enum IdentifierStrategy {
             IDENTITY,
@@ -54,6 +87,27 @@ public abstract class AbstractTest {
         List<IdentifierStrategy> identifierStrategies();
 
         Database database();
+    }
+
+    protected static class DataAccessException extends RuntimeException {
+        public DataAccessException() {
+        }
+
+        public DataAccessException(String message) {
+            super(message);
+        }
+
+        public DataAccessException(String message, Throwable cause) {
+            super(message, cause);
+        }
+
+        public DataAccessException(Throwable cause) {
+            super(cause);
+        }
+
+        public DataAccessException(String message, Throwable cause, boolean enableSuppression, boolean writableStackTrace) {
+            super(message, cause, enableSuppression, writableStackTrace);
+        }
     }
 
     static {
@@ -116,7 +170,7 @@ public abstract class AbstractTest {
         @Override
         public DataSource dataSource() {
             PGSimpleDataSource dataSource = new PGSimpleDataSource();
-            dataSource.setDatabaseName("hibernate-master-class");
+            dataSource.setDatabaseName("high_performance_java_persistence");
             dataSource.setServerName("localhost");
             dataSource.setUser("postgres");
             dataSource.setPassword("admin");
@@ -131,7 +185,7 @@ public abstract class AbstractTest {
         @Override
         public Properties dataSourceProperties() {
             Properties properties = new Properties();
-            properties.setProperty("databaseName", "hibernate-master-class");
+            properties.setProperty("databaseName", "high_performance_java_persistence");
             properties.setProperty("serverName", "localhost");
             properties.setProperty("user", "postgres");
             properties.setProperty("password", "admin");
@@ -159,7 +213,7 @@ public abstract class AbstractTest {
         public DataSource dataSource() {
             try {
                 OracleDataSource dataSource = new OracleDataSource();
-                dataSource.setDatabaseName("hibernate-master-class");
+                dataSource.setDatabaseName("high_performance_java_persistence");
                 dataSource.setURL("jdbc:oracle:thin:@localhost:1521/xe");
                 dataSource.setUser("oracle");
                 dataSource.setPassword("admin");
@@ -177,7 +231,7 @@ public abstract class AbstractTest {
         @Override
         public Properties dataSourceProperties() {
             Properties properties = new Properties();
-            properties.setProperty("databaseName", "hibernate-master-class");
+            properties.setProperty("databaseName", "high_performance_java_persistence");
             properties.setProperty("URL", "jdbc:oracle:thin:@localhost:1521/xe");
             properties.setProperty("user", "oracle");
             properties.setProperty("password", "admin");
@@ -235,7 +289,7 @@ public abstract class AbstractTest {
         @Override
         public DataSource dataSource() {
             MysqlDataSource dataSource = new MysqlDataSource();
-            dataSource.setURL("jdbc:mysql://localhost/hibernate-master-class?user=mysql&password=admin" +
+            dataSource.setURL("jdbc:mysql://localhost/high_performance_java_persistence?user=mysql&password=admin" +
                     "&rewriteBatchedStatements=" + rewriteBatchedStatements +
                     "&cachePrepStmts=" + cachePrepStmts +
                     "&useServerPrepStmts=" + useServerPrepStmts
@@ -251,7 +305,7 @@ public abstract class AbstractTest {
         @Override
         public Properties dataSourceProperties() {
             Properties properties = new Properties();
-            properties.setProperty("url", "jdbc:mysql://localhost/hibernate-master-class?user=mysql&password=admin");
+            properties.setProperty("url", "jdbc:mysql://localhost/high_performance_java_persistence?user=mysql&password=admin");
             return properties;
         }
 
@@ -284,7 +338,7 @@ public abstract class AbstractTest {
         @Override
         public DataSource dataSource() {
             SQLServerDataSource dataSource = new SQLServerDataSource();
-            dataSource.setURL("jdbc:sqlserver://localhost;instance=SQLEXPRESS;databaseName=hibernate_master_class;user=sa;password=adm1n");
+            dataSource.setURL("jdbc:sqlserver://localhost;instance=SQLEXPRESS;databaseName=high_performance_java_persistence;user=sa;password=adm1n");
             return dataSource;
         }
 
@@ -296,7 +350,7 @@ public abstract class AbstractTest {
         @Override
         public Properties dataSourceProperties() {
             Properties properties = new Properties();
-            properties.setProperty("URL", "jdbc:sqlserver://localhost;instance=SQLEXPRESS;databaseName=hibernate_master_class;user=sa;password=adm1n");
+            properties.setProperty("URL", "jdbc:sqlserver://localhost;instance=SQLEXPRESS;databaseName=high_performance_java_persistence;user=sa;password=adm1n");
             return properties;
         }
 
@@ -321,7 +375,7 @@ public abstract class AbstractTest {
         public DataSource dataSource() {
             JtdsDataSource dataSource = new JtdsDataSource();
             dataSource.setServerName("localhost");
-            dataSource.setDatabaseName("hibernate_master_class");
+            dataSource.setDatabaseName("high_performance_java_persistence");
             dataSource.setInstance("SQLEXPRESS");
             dataSource.setUser("sa");
             dataSource.setPassword("adm1n");
@@ -336,7 +390,7 @@ public abstract class AbstractTest {
         @Override
         public Properties dataSourceProperties() {
             Properties properties = new Properties();
-            properties.setProperty("databaseName", "hibernate_master_class");
+            properties.setProperty("databaseName", "high_performance_java_persistence");
             properties.setProperty("serverName", "localhost");
             properties.setProperty("instance", "SQLEXPRESS");
             properties.setProperty("user", "sa");
@@ -375,13 +429,47 @@ public abstract class AbstractTest {
     }
 
     @FunctionalInterface
-    protected interface SessionCallable<T> {
-        T execute(Session session);
+    protected interface HibernateTransactionFunction<T> extends Function<Session, T> {
+        default void beforeTransactionCompletion() {
+
+        }
+
+        default void afterTransactionCompletion() {
+
+        }
     }
 
     @FunctionalInterface
-    protected interface SessionVoidCallable {
-        void execute(Session session);
+    protected interface HibernateTransactionConsumer extends Consumer<Session> {
+        default void beforeTransactionCompletion() {
+
+        }
+
+        default void afterTransactionCompletion() {
+
+        }
+    }
+
+    @FunctionalInterface
+    protected interface JPATransactionFunction<T> extends Function<EntityManager, T> {
+        default void beforeTransactionCompletion() {
+
+        }
+
+        default void afterTransactionCompletion() {
+
+        }
+    }
+
+    @FunctionalInterface
+    protected interface JPATransactionVoidFunction extends Consumer<EntityManager> {
+        default void beforeTransactionCompletion() {
+
+        }
+
+        default void afterTransactionCompletion() {
+
+        }
     }
 
     @FunctionalInterface
@@ -394,45 +482,43 @@ public abstract class AbstractTest {
         void execute(Connection connection) throws SQLException;
     }
 
-    @FunctionalInterface
-    protected interface TransactionCallable<T> extends SessionCallable<T> {
-        default void beforeTransactionCompletion() {
-
-        }
-
-        default void afterTransactionCompletion() {
-
-        }
-    }
-
-    @FunctionalInterface
-    protected interface TransactionVoidCallable extends SessionVoidCallable {
-        default void beforeTransactionCompletion() {
-
-        }
-
-        default void afterTransactionCompletion() {
-
-        }
-    }
-
+    private EntityManagerFactory emf;
     private SessionFactory sf;
 
     @Before
     public void init() {
-        sf = newSessionFactory();
+        if( nativeHibernateSessionFactoryBootstrap()) {
+            sf = newSessionFactory();
+        } else {
+            emf = newEntityManagerFactory();
+        }
     }
 
     @After
     public void destroy() {
-        sf.close();
+        if( nativeHibernateSessionFactoryBootstrap()) {
+            sf.close();
+        } else {
+            emf.close();
+        }
+    }
+
+    public EntityManagerFactory getEntityManagerFactory() {
+        return emf;
     }
 
     public SessionFactory getSessionFactory() {
-        return sf;
+        return nativeHibernateSessionFactoryBootstrap() ? sf : emf.unwrap( SessionFactory.class);
+    }
+    protected boolean nativeHibernateSessionFactoryBootstrap() {
+        return true;
     }
 
     protected abstract Class<?>[] entities();
+
+    protected List<String> entityClassNames() {
+        return Arrays.asList(entities()).stream().map(Class::getName).collect(Collectors.toList());
+    }
 
     protected String[] packages() {
         return null;
@@ -465,22 +551,45 @@ public abstract class AbstractTest {
         );
     }
 
+    protected EntityManagerFactory newEntityManagerFactory() {
+        PersistenceUnitInfo persistenceUnitInfo = new PersistenceUnitInfoImpl(
+            getClass().getSimpleName(), entityClassNames(), getProperties()
+        );
+
+        Map<String, Object> configuration = new HashMap<>();
+        configuration.put(org.hibernate.jpa.AvailableSettings.INTERCEPTOR, interceptor());
+        EntityManagerFactoryBuilderImpl entityManagerFactoryBuilder = new EntityManagerFactoryBuilderImpl(
+            new PersistenceUnitInfoDescriptor(persistenceUnitInfo), configuration
+        );
+        return entityManagerFactoryBuilder.build();
+    }
+
     protected Properties getProperties() {
         Properties properties = new Properties();
         properties.put("hibernate.dialect", getDataSourceProvider().hibernateDialect());
-        //log settings
         properties.put("hibernate.hbm2ddl.auto", "create-drop");
+        //log settings
+        //properties.put("hibernate.show_sql", Boolean.TRUE.toString());
+        //properties.put("hibernate.format_sql", Boolean.TRUE.toString());
+        //properties.put("hibernate.use_sql_coments", Boolean.FALSE.toString());
+        properties.put("hibernate.generate_statistics", Boolean.TRUE.toString());
+        
         //data source settings
         properties.put("hibernate.connection.datasource", newDataSource());
         return properties;
     }
 
-    private DataSource newDataSource() {
+    protected DataSource newDataSource() {
         if (proxyDataSource()) {
-            ProxyDataSource proxyDataSource = new ProxyDataSource();
-            proxyDataSource.setDataSource(getDataSourceProvider().dataSource());
-            proxyDataSource.setListener(new SLF4JQueryLoggingListener());
-            return proxyDataSource;
+            ChainListener listener = new ChainListener();
+            SLF4JQueryLoggingListener loggingListener = new SLF4JQueryLoggingListener();
+            loggingListener.setQueryLogEntryCreator(new AbstractTest.InlineQueryLogEntryCreator());
+            listener.addListener(loggingListener);
+            return ProxyDataSourceBuilder
+                    .create(getDataSourceProvider().dataSource())
+                    .name(getClass().getName())
+                    .listener(listener)
+                    .build();
         } else {
             return getDataSourceProvider().dataSource();
         }
@@ -494,16 +603,16 @@ public abstract class AbstractTest {
         return new HsqldbDataSourceProvider();
     }
 
-    protected <T> T doInTransaction(TransactionCallable<T> callable) {
+    protected <T> T doInTransaction(HibernateTransactionFunction<T> callable) {
         T result = null;
         Session session = null;
         Transaction txn = null;
         try {
-            session = sf.openSession();
+            session = getSessionFactory().openSession();
             callable.beforeTransactionCompletion();
             txn = session.beginTransaction();
 
-            result = callable.execute(session);
+            result = callable.apply(session);
             txn.commit();
         } catch (RuntimeException e) {
             if ( txn != null && txn.isActive() ) txn.rollback();
@@ -517,15 +626,15 @@ public abstract class AbstractTest {
         return result;
     }
 
-    protected void doInTransaction(TransactionVoidCallable callable) {
+    protected void doInTransaction(HibernateTransactionConsumer callable) {
         Session session = null;
         Transaction txn = null;
         try {
-            session = sf.openSession();
+            session = getSessionFactory().openSession();
             callable.beforeTransactionCompletion();
             txn = session.beginTransaction();
 
-            callable.execute(session);
+            callable.accept(session);
             txn.commit();
         } catch (RuntimeException e) {
             if ( txn != null && txn.isActive() ) txn.rollback();
@@ -538,12 +647,56 @@ public abstract class AbstractTest {
         }
     }
 
-    protected <T> T doInConnection(ConnectionCallable<T> callable) {
+    protected <T> T doInJPA(JPATransactionFunction<T> function) {
+        T result = null;
+        EntityManager entityManager = null;
+        EntityTransaction txn = null;
+        try {
+            entityManager = emf.createEntityManager();
+            function.beforeTransactionCompletion();
+            txn = entityManager.getTransaction();
+            txn.begin();
+            result = function.apply(entityManager);
+            txn.commit();
+        } catch (RuntimeException e) {
+            if ( txn != null && txn.isActive()) txn.rollback();
+            throw e;
+        } finally {
+            function.afterTransactionCompletion();
+            if (entityManager != null) {
+                entityManager.close();
+            }
+        }
+        return result;
+    }
+
+    protected void doInJPA(JPATransactionVoidFunction function) {
+        EntityManager entityManager = null;
+        EntityTransaction txn = null;
+        try {
+            entityManager = emf.createEntityManager();
+            function.beforeTransactionCompletion();
+            txn = entityManager.getTransaction();
+            txn.begin();
+            function.accept(entityManager);
+            txn.commit();
+        } catch (RuntimeException e) {
+            if ( txn != null && txn.isActive()) txn.rollback();
+            throw e;
+        } finally {
+            function.afterTransactionCompletion();
+            if (entityManager != null) {
+                entityManager.close();
+            }
+        }
+    }
+
+    protected <T> T doInJDBC(ConnectionCallable<T> callable) {
         AtomicReference<T> result = new AtomicReference<>();
         Session session = null;
         Transaction txn = null;
         try {
-            session = sf.openSession();
+            session = getSessionFactory().openSession();
             txn = session.beginTransaction();
             session.doWork(connection -> {
                 result.set(callable.execute(connection));
@@ -560,11 +713,11 @@ public abstract class AbstractTest {
         return result.get();
     }
 
-    protected void doInConnection(ConnectionVoidCallable callable) {
+    protected void doInJDBC(ConnectionVoidCallable callable) {
         Session session = null;
         Transaction txn = null;
         try {
-            session = sf.openSession();
+            session = getSessionFactory().openSession();
             txn = session.beginTransaction();
             session.doWork(callable::execute);
             txn.commit();
@@ -615,6 +768,41 @@ public abstract class AbstractTest {
         return executorService.submit(callable);
     }
 
+    protected  void transact(Consumer<Connection> callback) {
+        transact(callback, null);
+    }
+
+    protected  void transact(Consumer<Connection> callback, Consumer<Connection> before) {
+        Connection connection = null;
+        try {
+            connection = newDataSource().getConnection();
+            if (before != null) {
+                before.accept(connection);
+            }
+            connection.setAutoCommit(false);
+            callback.accept(connection);
+            connection.commit();
+        } catch (Exception e) {
+            if (connection != null) {
+                try {
+                    connection.rollback();
+                } catch (SQLException ex) {
+                    throw new DataAccessException(e);
+                }
+            }
+            throw (e instanceof DataAccessException ?
+                    (DataAccessException) e : new DataAccessException(e));
+        } finally {
+            if(connection != null) {
+                try {
+                    connection.close();
+                } catch (SQLException e) {
+                    throw new DataAccessException(e);
+                }
+            }
+        }
+    }
+
     protected LockType lockType() {
         return LockType.LOCKS;
     }
@@ -644,4 +832,168 @@ public abstract class AbstractTest {
         }
         return result;
     }
+
+    protected String selectStringColumn(Connection connection, String sql) {
+        try {
+            try(Statement statement = connection.createStatement()) {
+                statement.setQueryTimeout(1);
+                ResultSet resultSet = statement.executeQuery(sql);
+                if(!resultSet.next()) {
+                    throw new IllegalArgumentException("There was no row to be selected!");
+                }
+                return resultSet.getString(1);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    protected int update(Connection connection, String sql) {
+        try {
+            try(Statement statement = connection.createStatement()) {
+                statement.setQueryTimeout(1);
+                return statement.executeUpdate(sql);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    protected int update(Connection connection, String sql, Object[] params) {
+        try {
+            try(PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setQueryTimeout(1);
+                for (int i = 0; i < params.length; i++) {
+                    statement.setObject(i + 1, params[i]);
+                }
+                return statement.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    protected int count(Connection connection, String sql) {
+        try {
+            try(Statement statement = connection.createStatement()) {
+                statement.setQueryTimeout(1);
+                ResultSet resultSet = statement.executeQuery(sql);
+                if(!resultSet.next()) {
+                    throw new IllegalArgumentException("There was no row to be selected!");
+                }
+                return ((Number) resultSet.getObject(1)).intValue();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    protected void printEntityCacheStats(String region, boolean printEntries) {
+		SecondLevelCacheStatistics stats = getCacheStats(region);
+		LOGGER.info(region + " Stats:  \n\n\t" + stats + "\n");
+		if (printEntries) {
+			@SuppressWarnings("rawtypes")
+			Map cacheEntries = stats.getEntries();
+			LOGGER.info(Arrays.toString(cacheEntries.entrySet().toArray()));
+		}
+	}
+	
+	protected void printEntityCacheStats(String region) {
+		printEntityCacheStats(region, false);
+	}
+	
+	protected void printQueryCacheStats(String region) {
+		SecondLevelCacheStatistics stats = getCacheStats(region);
+		LOGGER.info(region + " Stats:  \n\n\t" + stats + "\n");
+	}
+
+	protected SecondLevelCacheStatistics getCacheStats(String region) {
+		SecondLevelCacheStatistics stats = getSessionFactory().getStatistics().getSecondLevelCacheStatistics(region);
+		if (stats == null){
+			LOGGER.warn("No such cache:  " + region);
+		}
+		return stats;
+	}
+    
+	protected void print2LCRegionNames(){
+		String[] arr = getSessionFactory().getStatistics().getSecondLevelCacheRegionNames();
+
+		LOGGER.info("2LC Region names:");
+		for (String rn : arr) {
+			LOGGER.info("\t --->" + rn);
+		}		
+	}
+
+    public static class InlineQueryLogEntryCreator extends
+            DefaultQueryLogEntryCreator {
+        @Override
+        protected void writeParamsEntry(StringBuilder sb, ExecutionInfo execInfo, List<QueryInfo> queryInfoList) {
+            sb.append("Params:[");
+            for (QueryInfo queryInfo : queryInfoList) {
+                boolean firstArg = true;
+                for (Map<String, Object> paramMap : queryInfo.getQueryArgsList()) {
+
+                    if(!firstArg) {
+                        sb.append(", ");
+                    } else {
+                        firstArg = false;
+                    }
+
+                    SortedMap<String, Object> sortedParamMap = new TreeMap<>( new StringAsIntegerComparator());
+                    sortedParamMap.putAll(paramMap);
+
+                    sb.append("(");
+                    boolean firstParam = true;
+                    for (Map.Entry<String, Object> paramEntry : sortedParamMap.entrySet()) {
+                        if(!firstParam) {
+                            sb.append(", ");
+                        } else {
+                            firstParam = false;
+                        }
+                        Object parameter = paramEntry.getValue();
+                        if(parameter != null && parameter.getClass().isArray()) {
+                            sb.append(arrayToString(parameter));
+                        } else {
+                            sb.append(parameter);
+                        }
+                    }
+                    sb.append(")");
+                }
+            }
+            sb.append("]");
+        }
+
+        private String arrayToString(Object object) {
+            if(object.getClass().isArray()) {
+                if(object instanceof byte[]) {
+                    return Arrays.toString((byte []) object);
+                }
+                if(object instanceof short[]) {
+                    return Arrays.toString((short []) object);
+                }
+                if(object instanceof char[]) {
+                    return Arrays.toString((char []) object);
+                }
+                if(object instanceof int[]) {
+                    return Arrays.toString((int []) object);
+                }
+                if(object instanceof long[]) {
+                    return Arrays.toString((long []) object);
+                }
+                if(object instanceof float[]) {
+                    return Arrays.toString((float []) object);
+                }
+                if(object instanceof double[]) {
+                    return Arrays.toString((double []) object);
+                }
+                if(object instanceof boolean[]) {
+                    return Arrays.toString((boolean []) object);
+                }
+                if(object instanceof Object[]) {
+                    return Arrays.toString((Object []) object);
+                }
+            }
+            throw new UnsupportedOperationException("Arrat type not supported: " + object.getClass());
+        }
+    };
 }
